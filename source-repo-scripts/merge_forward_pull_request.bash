@@ -19,7 +19,7 @@
 # Requires the 'gh' CLI to be installed.
 #
 # Usage:
-# $ ./merge_forward_pull_request.bash <from_branch> <to_branch>
+# $ ./merge_forward_pull_request.bash <from_branch> <to_branch> <upstream_remote>
 #
 # For example, to merge `ign-rendering6` forward to `main`:
 #
@@ -27,8 +27,9 @@
 
 FROM_BRANCH=${1}
 TO_BRANCH=${2}
+REMOTE=${3:-"origin"}
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -lt 2 ]]; then
   echo "./merge_forward_pull_request.bash <from_branch> <to_branch>"
   exit 1
 elif [[ "$FROM_BRANCH" == "$TO_BRANCH" ]]; then
@@ -40,7 +41,7 @@ set -e
 
 CURRENT_BRANCH=$(git branch | sed -n -e 's/^\* \(.*\)/\1/p')
 
-ORIGIN_URL=$(git remote get-url origin)
+ORIGIN_URL=$(git remote get-url $REMOTE)
 ORIGIN_ORG_REPO=$(echo ${ORIGIN_URL} | sed -e 's@.*github\.com.@@' | sed -e 's/\.git//g')
 
 TITLE="Merge ${FROM_BRANCH} ➡️  ${TO_BRANCH}"
@@ -53,9 +54,11 @@ Branch comparison: https://github.com/${ORIGIN_ORG_REPO}/compare/${TO_BRANCH}...
 
 **Note to maintainers**: Remember to **Merge** with commit (not squash-merge or rebase)"
 
-gh pr create \
-    --title "$TITLE" \
-    --repo "$ORIGIN_ORG_REPO" \
-    --base "$TO_BRANCH" \
-    --body "$BODY" \
-    --head "$CURRENT_BRANCH"
+
+echo "$BODY"
+
+#gh pr create \
+#    --title "$TITLE" \
+#    --base "$TO_BRANCH" \
+#    --body "$BODY" \
+#    --head "$CURRENT_BRANCH"
