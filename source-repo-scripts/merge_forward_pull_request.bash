@@ -19,7 +19,7 @@
 # Requires the 'gh' CLI to be installed.
 #
 # Usage:
-# $ ./merge_forward_pull_request.bash <from_branch> <to_branch> <upstream_remote>
+# $ ./merge_forward_pull_request.bash <from_branch> <to_branch>
 #
 # For example, to merge `ign-rendering6` forward to `main`:
 #
