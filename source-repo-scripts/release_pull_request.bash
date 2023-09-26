@@ -54,6 +54,8 @@ if [[ $PREV_VER == $VERSION ]] then
   exit 1
 fi
 
+PREV_TAG=$(git tag | grep "_${PREV_VER}$")
+
 TITLE="Prepare for ${VERSION} Release"
 
 BODY="# 🎈 Release
