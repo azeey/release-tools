@@ -7,7 +7,6 @@
 #
 #   E.g.
 #   bash source_changelog.bash 3.0.0
-
 git fetch --tags
 
 PREV_VER=${1:-$(git describe --tags --abbrev=0 | sed 's/.*_//')}
@@ -16,13 +15,15 @@ echo "Changes since $PREV_VER"
 ORIGIN_URL=$(git remote get-url origin)
 REPO=$(basename ${ORIGIN_URL%.git})
 
-# Find tag that ends with _$PREV_VER
-PREV_TAG=$(git tag | grep "_${PREV_VER}$")
+if [[ $(git rev-parse --verify -q $PREV_VER) ]]
+then
+  PREV_TAG=$PREV_VER
+else
+  # Find tag that ends with _$PREV_VER
+  PREV_TAG=$(git tag | grep "_${PREV_VER}$")
+fi
 
-# Compare current branch to PREV_TAG
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-COMMITS=$(git log ${BRANCH}...${PREV_TAG} --no-merges --pretty=format:"%h")
+COMMITS=$(git log HEAD...${PREV_TAG} --no-merges --pretty=format:"%h")
 
 for COMMIT in $COMMITS
 do

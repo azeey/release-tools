@@ -31,7 +31,7 @@
 VERSION=${1}
 TO_BRANCH=${2}
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -lt 2 ]]; then
   echo "./release_pull_request.bash <version> <to_branch>"
   exit 1
 fi
@@ -39,7 +39,7 @@ fi
 set -e
 
 git fetch --tags
-PREV_VER=$(git describe --tags --abbrev=0 | sed 's/.*_//')
+PREV_VER=${3:-$(git describe --tags --abbrev=0 | sed 's/.*_//')}
 
 LOCAL_BRANCH=$(git rev-parse --abbrev-ref  HEAD)
 REMOTE_BRANCH=$(git rev-parse --abbrev-ref  HEAD@{upstream})
@@ -49,12 +49,19 @@ CURRENT_BRANCH="${REMOTE}:${LOCAL_BRANCH}"
 ORIGIN_URL=$(git remote get-url origin)
 ORIGIN_ORG_REPO=$(echo ${ORIGIN_URL} | sed -e 's@.*github\.com.@@' | sed -e 's/\.git//g')
 
-if [[ $PREV_VER == $VERSION ]] then
+if [[ $PREV_VER == $VERSION ]]
+then
   echo "Previous version ($PREV_VER) and current ($VERSION) version should be different"
   exit 1
 fi
 
-PREV_TAG=$(git tag | grep "_${PREV_VER}$")
+if [[ $(git rev-parse --verify -q $PREV_VER) ]]
+then
+  PREV_TAG=$PREV_VER
+else
+  # Find tag that ends with _$PREV_VER
+  PREV_TAG=$(git tag | grep "_${PREV_VER}$")
+fi
 
 TITLE="Prepare for ${VERSION} Release"
 
