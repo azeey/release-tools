@@ -19,7 +19,7 @@
 # Requires the 'gh' CLI to be installed.
 #
 # Usage:
-# $ ./release_pull_request.bash <from_branch> <to_branch>
+# $ ./release_pull_request.bash <version> <to_branch>
 #
 # For example, to release `gz-rendering7` 7.1.0
 #
@@ -28,26 +28,58 @@
 # Make sure you've checked out the branch that has the changes for the release
 # and that the changes have been pushed.
 
-VERSION=${1}
-TO_BRANCH=${2}
-
-if [[ $# -lt 2 ]]; then
-  echo "./release_pull_request.bash <version> <to_branch>"
+usage() {
+  echo "Usage: $0 [-h][-M][-m][-p] [version] [to_branch]" 1>&2
+  echo "-M   Bump major version" 1>&2
+  echo "-m   Bump minor version" 1>&2
+  echo "-p   Bump patch version" 1>&2
   exit 1
-fi
+}
 
-set -e
+while getopts "hMmp" arg; do
+  case "$arg" in
+    M) # Bump major
+      bump_major=true
+      ;;
+    m) # Bump minor
+      bump_minor=true
+      ;;
+    p) # Bump patch
+      bump_patch=true
+      ;;
+    h | *)
+      usage
+      exit 0
+      ;;
+  esac
+done
 
+shift $((OPTIND - 1))
+
+set -x
+
+
+VERSION=${1}
 git fetch --tags
 PREV_VER=${3:-$(git describe --tags --abbrev=0 | sed 's/.*_//')}
 
-LOCAL_BRANCH=$(git rev-parse --abbrev-ref  HEAD)
-REMOTE_BRANCH=$(git rev-parse --abbrev-ref  HEAD@{upstream})
-REMOTE=${REMOTE_BRANCH/\/$LOCAL_BRANCH/}
-CURRENT_BRANCH="${REMOTE}:${LOCAL_BRANCH}"
+if [[ "$VERSION" == "" ]]; then
+  NEW_VERSION=( ${PREV_VER//./ } )
+  if [[ $bump_major == true ]]; then
+    ((NEW_VERSION[0]++))
+    NEW_VERSION[1]=0
+    NEW_VERSION[2]=0
+  elif [[ $bump_minor == true ]]; then
+    ((NEW_VERSION[1]++))
+    NEW_VERSION[2]=0
+  elif [[ $bump_patch == true ]]; then
+    ((NEW_VERSION[2]++))
+  else
+    usage
+  fi
 
-ORIGIN_URL=$(git remote get-url origin)
-ORIGIN_ORG_REPO=$(echo ${ORIGIN_URL} | sed -e 's@.*github\.com.@@' | sed -e 's/\.git//g')
+  VERSION="${NEW_VERSION[0]}.${NEW_VERSION[1]}.${NEW_VERSION[2]}"
+fi
 
 if [[ $PREV_VER == $VERSION ]]
 then
@@ -62,6 +94,36 @@ else
   # Find tag that ends with _$PREV_VER
   PREV_TAG=$(git tag | grep "_${PREV_VER}$")
 fi
+
+VERSION_BRANCH=${VERSION/\~/-}
+git checkout -B "prep_${VERSION_BRANCH}"
+git commit -s -am "Prepare for ${VERSION}"
+
+while true
+do
+    read -r -p "Push and type 'Y' to create pull request: " choice
+    case "$choice" in
+      n|N) break;;
+      y|Y) 
+        create_pull_request=true
+        break;;
+      *) echo 'Response not valid';;
+    esac
+done
+
+if [ ! -n "$create_pull_request" ]; then
+  exit 0;
+fi
+
+TO_BRANCH=${2:-$(git describe --all --abbrev=0 HEAD~1 | sed 's#heads/##' | sed 's#remotes/origin/##')}
+
+LOCAL_BRANCH=$(git rev-parse --abbrev-ref  HEAD)
+REMOTE_BRANCH=$(git rev-parse --abbrev-ref  HEAD@{upstream})
+REMOTE=${REMOTE_BRANCH/\/$LOCAL_BRANCH/}
+CURRENT_BRANCH="${REMOTE}:${LOCAL_BRANCH}"
+
+ORIGIN_URL=$(git remote get-url origin)
+ORIGIN_ORG_REPO=$(echo ${ORIGIN_URL} | sed -e 's@.*github\.com.@@' | sed -e 's/\.git//g')
 
 TITLE="Prepare for ${VERSION} Release"
 

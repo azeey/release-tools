@@ -41,6 +41,8 @@ set -e
 LOCAL_BRANCH=$(git rev-parse --abbrev-ref  HEAD)
 REMOTE_BRANCH=$(git rev-parse --abbrev-ref  HEAD@{upstream})
 REMOTE=${REMOTE_BRANCH/\/$LOCAL_BRANCH/}
+# Sometimes the remote has a "remotes/" prefix. Remove it
+REMOTE=${REMOTE/remotes\//}
 CURRENT_BRANCH="${REMOTE}:${LOCAL_BRANCH}"
 
 ORIGIN_URL=$(git remote get-url origin)
