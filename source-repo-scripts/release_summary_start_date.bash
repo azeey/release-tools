@@ -31,7 +31,7 @@ fi
 
 git fetch --all --tags > /dev/null
 
-TAGS=$(git log --no-walk --tags --pretty="%(describe:tags=true)" --since=$START_DATE | grep -v "pre" | sort -r -V -t'_' -k2 )
+TAGS=$(git log --no-walk --tags --pretty="%(describe:tags=true)" --since=$START_DATE | sort -r -V -t'_' -k2 )
 
 for tag in $TAGS
 do
@@ -43,7 +43,7 @@ do
   LIB_WITHOUT_VERSION=${LIB/[0-9]*/}
   debugecho  "---------------------------------"
   debugecho "VERSION: $VERSION"
-  PREV_TAG=$(git log --no-walk=sorted --tags=$LIB* --pretty="%(describe:tags=true)" --until=$START_DATE | grep -v "pre" | head -n1)
+  PREV_TAG=$(git log --no-walk=sorted --tags=$LIB* --pretty="%(describe:tags=true)" --until=$START_DATE | head -n1)
   PREV=${PREV_TAG/*_}
   debugecho "PREV VERSION: $PREV"
 
