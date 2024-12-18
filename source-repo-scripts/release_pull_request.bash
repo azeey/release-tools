@@ -56,7 +56,7 @@ done
 
 shift $((OPTIND - 1))
 
-set -x
+# set -x
 
 
 VERSION=${1}
@@ -95,8 +95,11 @@ else
   PREV_TAG=$(git tag | grep "_${PREV_VER}$")
 fi
 
+TO_BRANCH=${2:-$(git rev-parse --abbrev-ref  HEAD)}
+
 VERSION_BRANCH=${VERSION/\~/-}
-git checkout -B "prep_${VERSION_BRANCH}"
+LOCAL_BRANCH="prep_${VERSION_BRANCH}"
+git checkout -B $LOCAL_BRANCH
 git commit -s -am "Prepare for ${VERSION}"
 
 while true
@@ -115,9 +118,6 @@ if [ ! -n "$create_pull_request" ]; then
   exit 0;
 fi
 
-TO_BRANCH=${2:-$(git describe --all --abbrev=0 HEAD~1 | sed 's#heads/##' | sed 's#remotes/origin/##')}
-
-LOCAL_BRANCH=$(git rev-parse --abbrev-ref  HEAD)
 REMOTE_BRANCH=$(git rev-parse --abbrev-ref  HEAD@{upstream})
 REMOTE=${REMOTE_BRANCH/\/$LOCAL_BRANCH/}
 CURRENT_BRANCH="${REMOTE}:${LOCAL_BRANCH}"
