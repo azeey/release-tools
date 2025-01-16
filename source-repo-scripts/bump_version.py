@@ -17,9 +17,10 @@
 
 import argparse
 import datetime
-from typing import Optional, Union
+from typing import Optional
 import subprocess
 import re
+from pathlib import Path
 
 REPO_NAMES = {
     "gz-cmake": "Gazebo CMake",
@@ -52,14 +53,18 @@ def ext_run(cmd: list):
         raise Exception("subprocess call failed")
     return out.decode()
 
+CMAKE_PROJECT_VERSION_PATTERN = r"^project\W*\(\W*([a-z0-9-]*)\W*VERSION\W*([0-9.]*)"
+
+def match_cmake_project_version(file_content: str):
+    return re.search(
+        CMAKE_PROJECT_VERSION_PATTERN ,
+        file_content,
+        re.MULTILINE,
+    )
 
 def get_project_and_version_from_cmake(cmake_file: str):
     with open(cmake_file) as f:
-        m = re.search(
-            r"^project\W*\(\W*([a-z0-9-]*)\W*VERSION\W*([0-9.]*)",
-            f.read(),
-            re.MULTILINE,
-        )
+        m = match_cmake_project_version(f.read())
     if m:
         return m.groups()
     else:
@@ -129,6 +134,39 @@ def generate_changelog(prev_tag, repo)-> list[str]:
     return changelog
 
 
+def update_changelog(changelog_path: Path, title: str, content: str):
+    # Find the first line that starts with a `##` and add the contents right after
+    with open(changelog_path, "r+") as f:
+        old_changelog = f.read()
+        match = re.search(r"^## .*\n", old_changelog)
+        # Look for the first newline starting from the match
+        if match:
+            f.seek(0)
+            f.write(old_changelog[:match.end()])
+            f.write("\n" + title + "\n\n")
+            f.write(content + "\n")
+            f.write(old_changelog[match.end():])
+
+def update_package_xml(package_xml_path: Path, new_version):
+    with open(package_xml_path, "r+") as f:
+        old_package_xml = f.read()
+        match = re.search(r"<version>(.*)</version>", old_package_xml)
+        if match:
+            f.seek(0)
+            f.write(old_package_xml[:match.start(1)])
+            f.write(new_version)
+            f.write(old_package_xml[match.end(1):])
+
+def update_cmakelists(cmakelists_path: Path, new_version):
+    with open(cmakelists_path, "r+") as f:
+        old_cmakelists = f.read()
+        match = match_cmake_project_version(old_cmakelists)
+        if match:
+            f.seek(0)
+            f.write(old_cmakelists[:match.start(2)])
+            f.write(new_version)
+            f.write(old_cmakelists[match.end(2):])
+
 def bump_version(bump: str, previous_version_input: Optional[str]):
 
     project, previous_version = get_project_and_version_from_cmake("CMakeLists.txt")
@@ -151,10 +189,14 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
     prev_tag = f"{project}_{previous_version}"
     print("prev_tag:", prev_tag)
     changelog = generate_changelog(prev_tag, repo)
-    changelog_str = "\n".join(changelog)
+    changelog_str = ("\n".join(changelog)).strip()
     date = datetime.date.today()
     changelog_title = f"### {repo_name} {new_version} ({date})"
     print(f"{changelog_title}\n\n{changelog_str}")
+
+    update_changelog(Path("Changelog.md"), changelog_title, changelog_str)
+    update_package_xml(Path("package.xml"), new_version)
+    update_cmakelists(Path("CMakeLists.txt"), new_version)
 
 
 def main():
