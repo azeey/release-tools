@@ -53,7 +53,7 @@ def ext_run(cmd: list):
         raise Exception("subprocess call failed")
     return out.decode()
 
-CMAKE_PROJECT_VERSION_PATTERN = r"^project\W*\(\W*([a-z0-9-]*)\W*VERSION\W*([0-9.]*)"
+CMAKE_PROJECT_VERSION_PATTERN = r"^project\W*\(\W*([a-z0-9_-]*)\W*VERSION\W*([0-9.]*)"
 
 def match_cmake_project_version(file_content: str):
     return re.search(
@@ -72,6 +72,7 @@ def get_project_and_version_from_cmake(cmake_file: str):
 
 def get_repo_from_project(project: str):
     repo = project.replace("ignition", "gz").replace("gazebo", "sim")
+    repo = repo.replace('_','-')
     # remove the version
     m = re.search("[a-z-_]*", repo)
     print(m)
@@ -109,6 +110,10 @@ def extract_title_and_pr(title_with_pr: str):
             title = m2.group(0)
         return title.strip(), pr
 
+def project_has_package_xml(project: str, version: str):
+    # TODO(azeey) Check if the project is in Harmonic or later to see if it "should"
+    # have a package.xml instead of just checking if the file exists.
+    return Path("package.xml").exists()
 
 def generate_changelog(prev_tag, repo)-> list[str]:
     commits = ext_run(
@@ -186,7 +191,7 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
         )
         return
 
-    prev_tag = f"{project}_{previous_version}"
+    prev_tag = f"{project.replace('_','-')}_{previous_version}"
     print("prev_tag:", prev_tag)
     changelog = generate_changelog(prev_tag, repo)
     changelog_str = ("\n".join(changelog)).strip()
@@ -195,7 +200,8 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
     print(f"{changelog_title}\n\n{changelog_str}")
 
     update_changelog(Path("Changelog.md"), changelog_title, changelog_str)
-    update_package_xml(Path("package.xml"), new_version)
+    if project_has_package_xml(project, previous_version):
+        update_package_xml(Path("package.xml"), new_version)
     update_cmakelists(Path("CMakeLists.txt"), new_version)
 
 

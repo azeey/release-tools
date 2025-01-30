@@ -29,14 +29,15 @@
 # and that the changes have been pushed.
 
 usage() {
-  echo "Usage: $0 [-h][-M][-m][-p] [version] [to_branch]" 1>&2
+  echo "Usage: $0 [-h][-M][-m][-p][-a] [version] [to_branch]" 1>&2
   echo "-M   Bump major version" 1>&2
   echo "-m   Bump minor version" 1>&2
   echo "-p   Bump patch version" 1>&2
+  echo "-a   Automatically determine the version" 1>&2
   exit 1
 }
 
-while getopts "hMmp" arg; do
+while getopts "hMmpa" arg; do
   case "$arg" in
     M) # Bump major
       bump_major=true
@@ -46,6 +47,9 @@ while getopts "hMmp" arg; do
       ;;
     p) # Bump patch
       bump_patch=true
+      ;;
+    a) # Automatic
+      auto_version=true
       ;;
     h | *)
       usage
@@ -63,23 +67,31 @@ VERSION=${1}
 git fetch --tags
 PREV_VER=${3:-$(git describe --tags --abbrev=0 | sed 's/.*_//')}
 
-if [[ "$VERSION" == "" ]]; then
-  NEW_VERSION=( ${PREV_VER//./ } )
-  if [[ $bump_major == true ]]; then
-    ((NEW_VERSION[0]++))
-    NEW_VERSION[1]=0
-    NEW_VERSION[2]=0
-  elif [[ $bump_minor == true ]]; then
-    ((NEW_VERSION[1]++))
-    NEW_VERSION[2]=0
-  elif [[ $bump_patch == true ]]; then
-    ((NEW_VERSION[2]++))
-  else
-    usage
-  fi
 
-  VERSION="${NEW_VERSION[0]}.${NEW_VERSION[1]}.${NEW_VERSION[2]}"
-fi
+get_new_version () {
+  if [[ "$VERSION" == "" ]]; then
+    NEW_VERSION=( ${PREV_VER//./ } )
+    if [[ $bump_major == true ]]; then
+      ((NEW_VERSION[0]++))
+      NEW_VERSION[1]=0
+      NEW_VERSION[2]=0
+    elif [[ $bump_minor == true ]]; then
+      ((NEW_VERSION[1]++))
+      NEW_VERSION[2]=0
+    elif [[ $bump_patch == true ]]; then
+      ((NEW_VERSION[2]++))
+    elif [[ $auto_version == true ]]; then
+      echo $(sed -En "s/^project\W*\(\W*([a-z0-9_-]*)\W*VERSION\W*([0-9.]*).*/\2/p" CMakeLists.txt)
+      return 0
+    else
+      usage
+    fi
+
+    echo "${NEW_VERSION[0]}.${NEW_VERSION[1]}.${NEW_VERSION[2]}"
+  fi
+}
+
+VERSION=$(get_new_version)
 
 if [[ $PREV_VER == $VERSION ]]
 then
@@ -132,9 +144,6 @@ BODY="# 🎈 Release
 Preparation for ${VERSION} release.
 
 Comparison to ${PREV_VER}: https://github.com/${ORIGIN_ORG_REPO}/compare/${PREV_TAG}...${TO_BRANCH}
-
-<!-- Add links to PRs that require this release (if needed) -->
-Needed by <PR(s)>
 
 ## Checklist
 - [ ] Asked team if this is a good time for a release
