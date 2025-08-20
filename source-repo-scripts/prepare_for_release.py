@@ -88,8 +88,11 @@ def calculate_new_version(bump: str, previous_version: str):
     new_version = [int(v) for v in previous_version.split(".")]
     if bump == "major":
         new_version[0] += 1
+        new_version[1] = 0
+        new_version[2] = 0
     elif bump == "minor":
         new_version[1] += 1
+        new_version[2] = 0
     elif bump == "patch":
         new_version[2] += 1
     return ".".join(map(str, new_version))
@@ -114,6 +117,10 @@ def project_has_package_xml(project: str, version: str):
     # TODO(azeey) Check if the project is in Harmonic or later to see if it "should"
     # have a package.xml instead of just checking if the file exists.
     return Path("package.xml").exists()
+
+def tag_exists(tag) -> bool:
+    po = subprocess.Popen(["git", "show-ref", "--tags", tag, "--quiet"])
+    return po.returncode == 0
 
 def generate_changelog(prev_tag, repo)-> list[str]:
     commits = ext_run(
@@ -192,6 +199,9 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
         return
 
     prev_tag = f"{project.replace('_','-')}_{previous_version}"
+    if not tag_exists(prev_tag):
+        version_split = [int(v) for v in previous_version.split(".")]
+        prev_tag = f"{project.replace('_','-')}{version_split[0]}_{previous_version}"
     print("prev_tag:", prev_tag)
     changelog = generate_changelog(prev_tag, repo)
     changelog_str = ("\n".join(changelog)).strip()
