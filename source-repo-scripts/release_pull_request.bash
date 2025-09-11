@@ -60,7 +60,7 @@ done
 
 shift $((OPTIND - 1))
 
-# set -x
+set -x
 
 
 VERSION=${1}
@@ -88,11 +88,12 @@ get_new_version () {
     fi
 
     echo "${NEW_VERSION[0]}.${NEW_VERSION[1]}.${NEW_VERSION[2]}"
+  else
+    echo $VERSION
   fi
 }
 
 VERSION=$(get_new_version)
-
 if [[ $PREV_VER == $VERSION ]]
 then
   echo "Previous version ($PREV_VER) and current ($VERSION) version should be different"
