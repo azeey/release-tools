@@ -119,7 +119,7 @@ def project_has_package_xml(project: str, version: str):
     return Path("package.xml").exists()
 
 def tag_exists(tag) -> bool:
-    po = subprocess.Popen(["git", "show-ref", "--tags", tag, "--quiet"])
+    po = subprocess.run(["git", "show-ref", "--tags", tag, "--quiet"])
     return po.returncode == 0
 
 def generate_changelog(prev_tag, repo)-> list[str]:
