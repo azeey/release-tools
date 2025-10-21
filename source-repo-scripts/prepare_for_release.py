@@ -198,6 +198,14 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
         )
         return
 
+    if input(f"Is the new version correct? (y/n): ").lower() != "y":
+        print("Aborting.")
+        return
+
+    branch_name = f"prep_{new_version}"
+    print(f"Creating new branch: {branch_name}")
+    ext_run(["git", "checkout", "-b", branch_name])
+
     prev_tag = f"{project.replace('_','-')}_{previous_version}"
     if not tag_exists(prev_tag):
         version_split = [int(v) for v in previous_version.split(".")]
@@ -213,6 +221,40 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
     if project_has_package_xml(project, previous_version):
         update_package_xml(Path("package.xml"), new_version)
     update_cmakelists(Path("CMakeLists.txt"), new_version)
+
+    input("Review the changes and press Enter to continue.")
+
+    ext_run(["git", "commit", "-am", f"prep {new_version}"])
+
+    remote = input("Enter the name of the git remote to push to: ")
+    ext_run(["git", "push", "-u", remote, branch_name])
+
+    origin_url = ext_run(["git", "remote", "get-url", remote]).strip()
+    origin_org_repo = origin_url.split(":")[-1].replace(".git", "")
+    to_branch = ext_run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+
+    title = f"Prepare for {new_version} Release"
+    body = f"""# 🎈 Release
+
+Preparation for {new_version} release.
+
+Comparison to {previous_version}: https://github.com/{origin_org_repo}/compare/{prev_tag}...{to_branch}
+
+## Checklist
+- [ ] Asked team if this is a good time for a release
+- [ ] There are no changes to be ported from the previous major version
+- [ ] No PRs targeted at this major version are close to getting in
+- [ ] Bumped minor for new features, patch for bug fixes
+- [ ] Updated changelog
+- [ ] Updated migration guide (as needed)
+- [ ] Link to PR updating dependency versions in appropriate repository in [gazebo-release](https://github.com/gazebo-release) (as needed): <LINK>
+
+<!-- Please refer to https://github.com/gazebo-tooling/release-tools#for-each-release for more information -->
+
+**Note to maintainers**: Remember to use **Squash-Merge** and edit the commit message to match the pull request summary while retaining \`Signed-off-by\` messages."""
+
+    ext_run(["gh", "pr", "create", "--title", title, "--body", body, "--web"])
+
 
 
 def main():
