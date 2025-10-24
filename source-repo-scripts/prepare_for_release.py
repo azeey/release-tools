@@ -224,7 +224,7 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
 
     input("Review the changes and press Enter to continue.")
 
-    ext_run(["git", "commit", "-am", f"prep {new_version}"])
+    ext_run(["git", "commit", "-asm", f"Prepare for {new_version}"])
 
     remote = input("Enter the name of the git remote to push to: ")
     ext_run(["git", "push", "-u", remote, branch_name])
