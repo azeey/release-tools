@@ -64,7 +64,7 @@ def main():
     # Create and checkout a new branch
     branch_name = f"bump_main_{new_version}"
     print(f"Creating new branch: {branch_name}")
-    subprocess.run(["git", "checkout", "-b", branch_name])
+    subprocess.check_call(["git", "checkout", "-b", branch_name])
 
     project_name = None
     # Find project name in CMakeLists.txt
