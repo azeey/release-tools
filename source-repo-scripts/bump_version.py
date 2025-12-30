@@ -21,6 +21,8 @@
 # - Migration.md
 #
 # The changes will be committed to a branch after confirming with the user.
+#
+# NOTE: This assumes that the VERSION_SUFFIX is set to PRE1 already.
 
 import re
 import subprocess
@@ -100,11 +102,11 @@ def main():
 
     changelog_project_name = None
     for line in content.splitlines():
-        if line.startswith("## "):
-            match = re.search(r"## (.*) \d+\.", line)
+        if line.startswith("#"):
+            match = re.search(r"#+ (.*) \d+", line)
             if match:
                 changelog_project_name = match.group(1)
-            break
+                break
 
     if not changelog_project_name:
         changelog_project_name = project_name.replace("-", " ").title()
