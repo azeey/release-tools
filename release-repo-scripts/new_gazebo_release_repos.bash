@@ -6,6 +6,7 @@
 # See https://github.com/cli/cli/issues/2166
 
 set -e
+set -x
 
 SCRIPT_DIR="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -15,13 +16,13 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
-NEW_REPOS=${1}
+NEW_REPOS=("$@")
 
 repo_exists()
 {
     local repo_github=${1}
 
-    if gh repo view $repo_github 2>1 > /dev/null; then
+    if gh repo view "$repo_github" > /dev/null 2>&1; then
         echo true
     else
         echo false
@@ -39,7 +40,7 @@ empty_directory()
     fi
 }
 
-for repo_name in ${NEW_REPOS}; do
+for repo_name in "${NEW_REPOS[@]}"; do
     echo "Procesing ${repo_name}"
     repo_fname="${repo_name}-release"
     repo_github="gazebo-release/${repo_fname}"
@@ -70,30 +71,34 @@ for repo_name in ${NEW_REPOS}; do
                 --enable-issues \
                 --description "Debian/Ubuntu metadata for ${repo_name}" \
                 ${repo_github}
+            gh repo clone ${repo_github} ${repo_fname} 2> /dev/null
         fi
     fi
     # repository checkout in place
-    cd ${repo_fname}
-    version="$(sed  's/.*[^0-9]\([0-9]\+\)[^0-9]*$/\1/' <<< ${repo_name})"
-    previous_version=$(expr ${version} - 1)
-    previous_repo_github="${repo_github/[0-9]*}${previous_version}-release"
-    echo " + pull from previous version ${previous_repo_github}"
-    git remote add previous "https://github.com/${previous_repo_github}"
-    git fetch previous
-    git pull -q previous master >/dev/null 2>&1 || git pull -q previous main >/dev/null 2>&1
-    git remote remove previous
-    echo " + run bump_major_version script ${previous_version} -> ${version}"
-    echo
-    echo " -------------------------------"
-    "${SCRIPT_DIR}/bump_major_version.bash" ${previous_version} ${version}
-    echo " -------------------------------"
-    echo
-    echo " ? check output for possible FIXME messages"
-    read -n 1 -s -r -p "  press any key to continue"
-    git checkout -b main
-    git status
-    echo " ? ready to commit --all and push ?"
-    read -n 1 -s -r -p "  press any key to continue"
-    git commit -m "Change metadata from ${previous_version} version to ${version}" --all
-    git push origin main
+    # Do this in a subshell so that we don't have to cd back to the parent dir
+    (
+      cd ${repo_fname}
+      version="$(sed  's/.*[^0-9]\([0-9]\+\)[^0-9]*$/\1/' <<< ${repo_name})"
+      previous_version=$(expr ${version} - 1)
+      previous_repo_github="${repo_github/[0-9]*}${previous_version}-release"
+      echo " + pull from previous version ${previous_repo_github}"
+      git remote add previous "https://github.com/${previous_repo_github}"
+      git fetch previous
+      git pull -q previous master >/dev/null 2>&1 || git pull -q previous main >/dev/null 2>&1
+      git remote remove previous
+      echo " + run bump_major_version script ${previous_version} -> ${version}"
+      echo
+      echo " -------------------------------"
+      "${SCRIPT_DIR}/bump_major_version.bash" ${previous_version} ${version}
+      echo " -------------------------------"
+      echo
+      echo " ? check output for possible FIXME messages"
+      read -n 1 -s -r -p "  press any key to continue"
+      git checkout -B main
+      git status
+      echo " ? ready to commit --all and push ?"
+      read -n 1 -s -r -p "  press any key to continue"
+      git commit -m "Change metadata from ${previous_version} version to ${version}" --all
+      git push origin main
+    )
 done
