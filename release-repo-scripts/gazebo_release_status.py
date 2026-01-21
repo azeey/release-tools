@@ -84,10 +84,6 @@ def get_all_repos_data(repositories):
                 }}
               }}
             }}
-            latestRelease {{
-              tagName
-              publishedAt
-            }}
             tags: refs(refPrefix: "refs/tags/", last: 100, orderBy: {{field: TAG_COMMIT_DATE, direction: ASC}}) {{
               nodes {{
                 name
@@ -199,16 +195,6 @@ def main():
                 release_date = target["committedDate"]
             elif "target" in target and "committedDate" in target["target"]:
                 release_date = target["target"]["committedDate"]
-        elif repo_info.get("latestRelease"):
-            lr_tag = repo_info["latestRelease"]["tagName"]
-            if lr_tag.startswith(search_prefix + "_"):
-                latest_tag = lr_tag
-                release_date = repo_info["latestRelease"]["publishedAt"]
-
-        # Final fallback
-        if not latest_tag and repo_info.get("latestRelease"):
-            latest_tag = repo_info["latestRelease"]["tagName"]
-            release_date = repo_info["latestRelease"]["publishedAt"]
 
         branch_ref = repo_info.get("branchRef")
         if not branch_ref:
@@ -240,14 +226,6 @@ def main():
             row += [str(commits_since), str(files_changed), diff_url]
 
         output_lines.append("| " + " | ".join(row) + " |")
-
-    markdown_output = "\n".join(output_lines)
-    
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(markdown_output)
-    else:
-        print(markdown_output)
 
     markdown_output = "\n".join(output_lines)
     
