@@ -227,7 +227,7 @@ def generate_html(collection_name, header, rows):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gazebo Release Status: {collection_name.capitalize()}</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1800px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }}
         h1 {{ color: #2c3e50; text-align: center; }}
         .container {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow-x: auto; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }}
@@ -273,9 +273,6 @@ def generate_html(collection_name, header, rows):
                 # Simple markdown link to HTML link
                 import re
                 content = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', content)
-            
-            if "`" in content:
-                content = content.replace("`", "<code>").replace("`", "</code>") # simplistic but works for our format
 
             # Special handling for dates in parentheses to make them look better
             if "(" in content and ")" in content:
@@ -347,12 +344,22 @@ def main():
         # Determine latest tag
         latest_tag = None
         release_date = None
-        search_prefix = branch.replace('sdf', 'sdformat')
+        
+        # Try to find a tag that matches the branch prefix
+        # branch is like 'gz-cmake3', tags are like 'gz-cmake3_3.0.0'
+        # branch 'sdf14' matches tags 'sdformat14_14.0.0'
+        # branch 'ign-cmake2' matches tags 'ignition-cmake2_2.17.2'
+        prefixes = [branch + "_"]
+        if branch.startswith("sdf"):
+            prefixes.append(branch.replace("sdf", "sdformat") + "_")
+        if branch.startswith("ign-"):
+            prefixes.append(branch.replace("ign-", "ignition-") + "_")
         
         matched_tags = []
         if repo_info.get("tags") and repo_info["tags"]["nodes"]:
             for tag_node in repo_info["tags"]["nodes"]:
-                if tag_node["name"].startswith(search_prefix + "_"):
+                tag_name = tag_node["name"]
+                if any(tag_name.startswith(p) for p in prefixes):
                     matched_tags.append(tag_node)
         
         if matched_tags:
@@ -376,14 +383,14 @@ def main():
         if release_date:
             tag_str += f" ({format_date(release_date)})"
             
-        commit_str = f"`{latest_commit_oid}`"
+        commit_str = f"<code>{latest_commit_oid}</code>"
         if latest_commit_date:
             commit_str += f" ({format_date(latest_commit_date)})"
 
         days_since_release = calculate_days(release_date)
         row = [
             repo,
-            f"`{branch}`",
+            f"<code>{branch}</code>",
             tag_str,
             commit_str,
             str(calculate_days(latest_commit_date)),
