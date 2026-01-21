@@ -209,6 +209,106 @@ def get_priority(commits_count, days_since_release, significance):
         
     return score, priority, ", ".join(reasons) if reasons else "Minor changes"
 
+def generate_html(collection_name, header, rows):
+    """Generate a complete HTML page with sorting and styling."""
+    priority_colors = {
+        "Critical": "#f8d7da",
+        "High": "#fff3cd",
+        "Medium": "#e2e3e5",
+        "Low": "#d4edda",
+        "None": "#ffffff"
+    }
+    
+    html_template = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gazebo Release Status: {collection_name.capitalize()}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }}
+        h1 {{ color: #2c3e50; text-align: center; }}
+        .container {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow-x: auto; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }}
+        th {{ background-color: #2c3e50; color: white; padding: 12px; text-align: left; cursor: pointer; position: sticky; top: 0; }}
+        th:hover {{ background-color: #34495e; }}
+        th::after {{ content: ' ↕'; font-size: 10px; opacity: 0.5; }}
+        td {{ padding: 10px; border-bottom: 1px solid #eee; }}
+        tr:hover {{ filter: brightness(0.95); }}
+        .priority-Critical {{ background-color: {priority_colors["Critical"]}; }}
+        .priority-High {{ background-color: {priority_colors["High"]}; }}
+        .priority-Medium {{ background-color: {priority_colors["Medium"]}; }}
+        .priority-Low {{ background-color: {priority_colors["Low"]}; }}
+        code {{ background: #f8f9fa; padding: 2px 4px; border-radius: 4px; font-family: monospace; border: 1px solid #ddd; }}
+        a {{ color: #3498db; text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+        .timestamp {{ font-size: 12px; color: #666; display: block; margin-top: 4px; }}
+        .meta-info {{ margin-bottom: 20px; text-align: center; color: #7f8c8d; }}
+    </style>
+</head>
+<body>
+    <h1>Gazebo Release Status: {collection_name.capitalize()}</h1>
+    <p class="meta-info">Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+    <div class="container">
+        <table id="statusTable">
+            <thead>
+                <tr>
+                    {"".join(f"<th>{h}</th>" for h in header)}
+                </tr>
+            </thead>
+            <tbody>
+"""
+    for _, row in rows:
+        # Check if priority column exists (index 6 if --get-changes)
+        priority = "None"
+        if len(row) > 6:
+            priority = row[6]
+        
+        html_template += f'                <tr class="priority-{priority}">\n'
+        for i, cell in enumerate(row):
+            # Format markdown-style links and codes for HTML
+            content = cell
+            if "[" in content and "](" in content:
+                # Simple markdown link to HTML link
+                import re
+                content = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', content)
+            
+            if "`" in content:
+                content = content.replace("`", "<code>").replace("`", "</code>") # simplistic but works for our format
+
+            # Special handling for dates in parentheses to make them look better
+            if "(" in content and ")" in content:
+                 content = content.replace(" (", '<br><span class="timestamp">').replace(")", "</span>")
+
+            html_template += f"                    <td>{content}</td>\n"
+        html_template += "                </tr>\n"
+
+    html_template += """
+            </tbody>
+        </table>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+            const comparer = (idx, asc) => (a, b) => ((v1, v2) => 
+                v1 !== '' && v2 !== '' && !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.toString().localeCompare(v2)
+                )(getCellValue(asc ? a : b, idx), getCellValue(asc ? b : a, idx));
+
+            document.querySelectorAll('th').forEach(th => th.addEventListener('click', (() => {
+                const table = th.closest('table');
+                const tbody = table.querySelector('tbody');
+                Array.from(tbody.querySelectorAll('tr'))
+                    .sort(comparer(Array.from(th.parentNode.children).indexOf(th), this.asc = !this.asc))
+                    .forEach(tr => tbody.appendChild(tr) );
+            })));
+        });
+    </script>
+</body>
+</html>
+"""
+    return html_template
+
 def main():
     parser = argparse.ArgumentParser(description="Check release status of Gazebo libraries.")
     parser.add_argument("collection", help="Collection name (e.g., harmonic, ionic, jetty)")
@@ -222,10 +322,6 @@ def main():
     sys.stderr.write(f"Fetching data for {len(repositories)} repositories...\n")
     all_repo_data = get_all_repos_data(repositories)
 
-    output_lines = []
-    output_lines.append(f"# Gazebo Release Status: {args.collection.capitalize()}")
-    output_lines.append("")
-    
     header = [
         "Library", "Branch", "Latest Tag", "Latest Commit", 
         "Days Since Commit", "Days Since Release"
@@ -233,9 +329,6 @@ def main():
     if args.get_changes:
         header += ["Priority", "Reason", "Commits Since", "Files Changed", "Diff"]
         
-    output_lines.append("| " + " | ".join(header) + " |")
-    output_lines.append("| " + " | ".join(["---"] * len(header)) + " |")
-
     rows = []
 
     # Map aliases back to original repositories
@@ -323,16 +416,13 @@ def main():
     # Sort rows by priority score descending
     rows.sort(key=lambda x: x[0], reverse=True)
 
-    for _, row in rows:
-        output_lines.append("| " + " | ".join(row) + " |")
-
-    markdown_output = "\n".join(output_lines)
+    html_output = generate_html(args.collection, header, rows)
     
     if args.output:
         with open(args.output, "w") as f:
-            f.write(markdown_output)
+            f.write(html_output)
     else:
-        print(markdown_output)
+        print(html_output)
 
 if __name__ == "__main__":
     main()
