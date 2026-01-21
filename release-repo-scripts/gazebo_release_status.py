@@ -142,6 +142,73 @@ def format_date(date_str):
         return ""
     return date_str.split("T")[0]
 
+def analyze_significance(commits, files):
+    """Analyze commit messages and files for significance."""
+    significance = {"breaking": False, "features": 0, "fixes": 0}
+    
+    # Heuristic: only consider changes to source files as significant for releases
+    source_extensions = (".cc", ".hh", ".cpp", ".hpp", ".c", ".h")
+    has_source_changes = any(f.get("filename", "").endswith(source_extensions) for f in files)
+    
+    if not has_source_changes:
+        return significance
+
+    feature_keywords = ["add", "new", "implement", "support", "feature", "include"]
+    fix_keywords = ["fix", "bug", "issue", "resolve", "correct", "prevent", "regression"]
+    breaking_keywords = ["breaking change", "deprecate", "remove", "api change"]
+    
+    for c in commits:
+        msg = c.get("commit", {}).get("message", "").lower()
+        
+        # Check for breaking changes
+        if any(kw in msg for kw in breaking_keywords):
+            significance["breaking"] = True
+            
+        # Check for features (at start of message or after a space)
+        if any(msg.startswith(kw) or f" {kw}" in msg for kw in feature_keywords):
+            significance["features"] += 1
+        elif any(msg.startswith(kw) or f" {kw}" in msg for kw in fix_keywords):
+            significance["fixes"] += 1
+            
+    return significance
+
+def get_priority(commits_count, days_since_release, significance):
+    """Determine release priority and reason."""
+    if commits_count == 0:
+        return 0, "None", "-"
+    
+    reasons = []
+    score = 0
+    
+    if significance["breaking"]:
+        score += 100
+        reasons.append("Breaking changes")
+    if significance["features"] > 0:
+        score += 20 + (significance["features"] * 5)
+        reasons.append(f"{significance['features']} features")
+    if significance["fixes"] > 0:
+        score += 10 + (significance["fixes"] * 2)
+        reasons.append(f"{significance['fixes']} fixes")
+        
+    score += commits_count * 0.5
+    if days_since_release != "N/A":
+        if days_since_release > 180:
+            score += 30
+            reasons.append("> 6 months since release")
+        elif days_since_release > 90:
+            score += 15
+            reasons.append("> 3 months since release")
+
+    priority = "Low"
+    if score >= 100:
+        priority = "Critical"
+    elif score >= 40:
+        priority = "High"
+    elif score >= 15:
+        priority = "Medium"
+        
+    return score, priority, ", ".join(reasons) if reasons else "Minor changes"
+
 def main():
     parser = argparse.ArgumentParser(description="Check release status of Gazebo libraries.")
     parser.add_argument("collection", help="Collection name (e.g., harmonic, ionic, jetty)")
@@ -164,10 +231,12 @@ def main():
         "Days Since Commit", "Days Since Release"
     ]
     if args.get_changes:
-        header += ["Commits Since Release", "Files Changed", "Diff"]
+        header += ["Priority", "Reason", "Commits Since", "Files Changed", "Diff"]
         
     output_lines.append("| " + " | ".join(header) + " |")
     output_lines.append("| " + " | ".join(["---"] * len(header)) + " |")
+
+    rows = []
 
     # Map aliases back to original repositories
     for i, (repo_key, info) in enumerate(repositories.items()):
@@ -218,27 +287,43 @@ def main():
         if latest_commit_date:
             commit_str += f" ({format_date(latest_commit_date)})"
 
+        days_since_release = calculate_days(release_date)
         row = [
             repo,
             f"`{branch}`",
             tag_str,
             commit_str,
             str(calculate_days(latest_commit_date)),
-            str(calculate_days(release_date))
+            str(days_since_release)
         ]
 
+        priority_score = 0
         if args.get_changes:
-            commits_since = "N/A"
-            files_changed = "N/A"
+            commits_since = 0
+            files_changed = 0
             diff_url = "N/A"
+            priority = "None"
+            reason = "-"
+            
             if latest_tag:
                 comparison = get_comparison(owner, repo, latest_tag, branch)
                 if comparison:
                     commits_since = comparison.get("total_commits", 0)
-                    files_changed = len(comparison.get("files", []))
+                    files = comparison.get("files", [])
+                    files_changed = len(files)
                     diff_url = f"[Diff]({comparison.get('html_url')})"
-            row += [str(commits_since), str(files_changed), diff_url]
+                    
+                    significance = analyze_significance(comparison.get("commits", []), files)
+                    priority_score, priority, reason = get_priority(commits_since, days_since_release, significance)
+            
+            row += [priority, reason, str(commits_since), str(files_changed), diff_url]
 
+        rows.append((priority_score, row))
+
+    # Sort rows by priority score descending
+    rows.sort(key=lambda x: x[0], reverse=True)
+
+    for _, row in rows:
         output_lines.append("| " + " | ".join(row) + " |")
 
     markdown_output = "\n".join(output_lines)
