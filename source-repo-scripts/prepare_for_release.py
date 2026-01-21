@@ -17,9 +17,10 @@
 
 import argparse
 import datetime
-from typing import Optional
+from typing import Optional, Dict
 import subprocess
 import re
+import sys
 from pathlib import Path
 
 REPO_NAMES = {
@@ -51,7 +52,7 @@ def ext_run(cmd: list):
         print("stdout: %s" % (out.decode()))
         print("stderr: %s" % (err.decode()))
         raise Exception("subprocess call failed")
-    return out.decode()
+    return out.decode().strip()
 
 CMAKE_PROJECT_VERSION_PATTERN = r"^project\W*\(\W*([a-z0-9_-]*)\W*VERSION\W*([0-9.]*)"
 
@@ -179,7 +180,83 @@ def update_cmakelists(cmakelists_path: Path, new_version):
             f.write(new_version)
             f.write(old_cmakelists[match.end(2):])
 
-def bump_version(bump: str, previous_version_input: Optional[str]):
+def get_tracking_branch_tips() -> Dict[str, str]:
+    """
+    Finds all local branches (except HEAD) that track a remote.
+    
+    Returns:
+        A dictionary mapping {commit_sha: branch_name}
+    """
+    
+    current_branch = ext_run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+    if not current_branch or current_branch == 'HEAD':
+        print("Error: Not on a branch or in detached HEAD state.", file=sys.stderr)
+        return {}
+
+    # Get all local branches
+    all_local_branches_str = ext_run(
+        ['git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads/']
+    )
+    if not all_local_branches_str:
+        return {}
+
+    all_local_branches = all_local_branches_str.splitlines()
+    
+    branch_tips: Dict[str, str] = {}
+    
+    for branch in all_local_branches:
+        if branch == current_branch:
+            continue # Skip the branch we're on
+
+        # Check if this branch tracks an upstream
+        upstream = ext_run(
+            ['git', 'for-each-ref', '--format=%(upstream:short)', f'refs/heads/{branch}']
+        )
+        
+        if upstream:
+            # It's a tracking branch. Get its tip commit SHA.
+            sha = ext_run(['git', 'rev-parse', branch])
+            if sha:
+                # Note: If multiple branches point to the same commit,
+                # this map will only store one of them. This is usually fine.
+                branch_tips[sha] = branch
+
+    return branch_tips
+
+def find_base_branch_by_history_walk() -> Optional[str]:
+    """
+    Walks the current branch's history to find the first commit
+    that is the tip of another tracking branch.
+    """
+    
+    # 1. Get the map of {sha: branch_name} for all "base" branches.
+    base_branch_tips = get_tracking_branch_tips()
+    if not base_branch_tips:
+        print("Error: No other local branches are tracking an upstream.", file=sys.stderr)
+        return None
+
+    # 2. Get the commit history of the current branch (newest to oldest)
+    ancestor_commits_str = ext_run(['git', 'rev-list', 'HEAD'])
+    if not ancestor_commits_str:
+         print("Error: Could not get commit history.", file=sys.stderr)
+         return None
+
+    ancestor_commits = ancestor_commits_str.splitlines()
+
+    # 3. Walk the history and check against the map
+    # The first commit in the list is HEAD itself. We skip it
+    # by checking ancestors, but it's good to be aware.
+    for commit_sha in ancestor_commits:
+        if commit_sha in base_branch_tips:
+            # Found it!
+            found_branch = base_branch_tips[commit_sha]
+            return found_branch
+
+    # If we get here, no ancestor commit matched
+    print("Error: Could not find a base branch in history.", file=sys.stderr)
+    return None
+
+def bump_version(bump: str, previous_version_input: Optional[str], only_pr: bool):
 
     project, previous_version = get_project_and_version_from_cmake("CMakeLists.txt")
     repo, repo_name = get_repo_from_project(project)
@@ -198,40 +275,45 @@ def bump_version(bump: str, previous_version_input: Optional[str]):
         )
         return
 
-    if input(f"Is the new version correct? (y/n): ").lower() != "y":
+    if input("Is the new version correct? (y/n): ").lower() != "y":
         print("Aborting.")
         return
 
-    branch_name = f"prep_{new_version}"
-    print(f"Creating new branch: {branch_name}")
-    ext_run(["git", "checkout", "-b", branch_name])
 
     prev_tag = f"{project.replace('_','-')}_{previous_version}"
-    if not tag_exists(prev_tag):
-        version_split = [int(v) for v in previous_version.split(".")]
-        prev_tag = f"{project.replace('_','-')}{version_split[0]}_{previous_version}"
-    print("prev_tag:", prev_tag)
-    changelog = generate_changelog(prev_tag, repo)
-    changelog_str = ("\n".join(changelog)).strip()
-    date = datetime.date.today()
-    changelog_title = f"### {repo_name} {new_version} ({date})"
-    print(f"{changelog_title}\n\n{changelog_str}")
 
-    update_changelog(Path("Changelog.md"), changelog_title, changelog_str)
-    if project_has_package_xml(project, previous_version):
-        update_package_xml(Path("package.xml"), new_version)
-    update_cmakelists(Path("CMakeLists.txt"), new_version)
+    if not only_pr:
+        branch_name = f"prep_{new_version}"
+        print(f"Creating new branch: {branch_name}")
+        ext_run(["git", "checkout", "-b", branch_name])
 
-    input("Review the changes and press Enter to continue.")
+        if not tag_exists(prev_tag):
+            version_split = [int(v) for v in previous_version.split(".")]
+            prev_tag = f"{project.replace('_','-')}{version_split[0]}_{previous_version}"
+        print("prev_tag:", prev_tag)
+        changelog = generate_changelog(prev_tag, repo)
+        changelog_str = ("\n".join(changelog)).strip()
+        date = datetime.date.today()
+        changelog_title = f"### {repo_name} {new_version} ({date})"
+        print(f"{changelog_title}\n\n{changelog_str}")
 
-    ext_run(["git", "commit", "-asm", f"Prepare for {new_version}"])
+        update_changelog(Path("Changelog.md"), changelog_title, changelog_str)
+        if project_has_package_xml(project, previous_version):
+            update_package_xml(Path("package.xml"), new_version)
+        update_cmakelists(Path("CMakeLists.txt"), new_version)
 
-    remote = input("Enter the name of the git remote to push to: ")
-    ext_run(["git", "push", "-u", remote, branch_name])
+        input("Review the changes and press Enter to continue.")
 
-    origin_url = ext_run(["git", "remote", "get-url", remote]).strip()
+        ext_run(["git", "commit", "-asm", f"Prepare for {new_version}"])
+
+        remote = input("Enter the name of the git remote to push to: ")
+        ext_run(["git", "push", "-u", remote, branch_name])
+
+    to_branch = find_base_branch_by_history_walk()
+    print("To branch:", to_branch)
+    origin_url = ext_run(["git", "remote", "get-url", "origin"]).strip()
     origin_org_repo = origin_url.split(":")[-1].replace(".git", "")
-    to_branch = ext_run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+    origin_org_repo = re.sub(r".*github.com/", "", origin_org_repo)
 
     title = f"Prepare for {new_version} Release"
     body = f"""# 🎈 Release
@@ -251,9 +333,9 @@ Comparison to {previous_version}: https://github.com/{origin_org_repo}/compare/{
 
 <!-- Please refer to https://github.com/gazebo-tooling/release-tools#for-each-release for more information -->
 
-**Note to maintainers**: Remember to use **Squash-Merge** and edit the commit message to match the pull request summary while retaining \`Signed-off-by\` messages."""
+**Note to maintainers**: Remember to use **Squash-Merge** and edit the commit message to match the pull request summary while retaining `Signed-off-by` messages."""
 
-    ext_run(["gh", "pr", "create", "--title", title, "--body", body, "--web"])
+    ext_run(["gh", "pr", "create", "--title", title, "--repo", origin_org_repo, "--base", to_branch, "--body", body, "--web"])
 
 
 
@@ -275,9 +357,10 @@ def main():
         help="Previous version (e.g., 3.0.0). If left empty, the last tag found \
               using 'git describe --tags' will be used",
     )
+    parser.add_argument("--only-pr", action="store_true", default=False, help="Only create the PR")
 
     args = parser.parse_args()
-    bump_version(args.bump, args.previous)
+    bump_version(args.bump, args.previous, args.only_pr)
 
 
 if __name__ == "__main__":
