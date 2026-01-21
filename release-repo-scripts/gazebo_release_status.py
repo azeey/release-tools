@@ -136,6 +136,12 @@ def calculate_days(date_str):
     except (ValueError, TypeError):
         return "N/A"
 
+def format_date(date_str):
+    """Extract YYYY-MM-DD from ISO date string."""
+    if not date_str:
+        return ""
+    return date_str.split("T")[0]
+
 def main():
     parser = argparse.ArgumentParser(description="Check release status of Gazebo libraries.")
     parser.add_argument("collection", help="Collection name (e.g., harmonic, ionic, jetty)")
@@ -204,11 +210,19 @@ def main():
             latest_commit_oid = branch_ref["target"]["oid"][:7]
             latest_commit_date = branch_ref["target"]["committedDate"]
         
+        tag_str = latest_tag if latest_tag else "None"
+        if release_date:
+            tag_str += f" ({format_date(release_date)})"
+            
+        commit_str = f"`{latest_commit_oid}`"
+        if latest_commit_date:
+            commit_str += f" ({format_date(latest_commit_date)})"
+
         row = [
             repo,
             f"`{branch}`",
-            latest_tag if latest_tag else "None",
-            f"`{latest_commit_oid}`",
+            tag_str,
+            commit_str,
             str(calculate_days(latest_commit_date)),
             str(calculate_days(release_date))
         ]
